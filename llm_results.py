@@ -64,10 +64,10 @@ def upload_to_db(df, table_name, schema_name='google_review'):
             conn.execute(text(upsert_sql))
             conn.execute(text(f"DROP TABLE {schema_name}.{temp_table}"))
             trans.commit()
-            print(f"✅ Upsert completed successfully into {schema_name}.{table_name}")
+            print(f"Upsert completed successfully into {schema_name}.{table_name}")
         except Exception as e:
             trans.rollback()
-            print("❌ Upsert failed:", e)
+            print("Upsert failed:", e)
             raise
 
 reviews_df = pd.read_sql("""
@@ -111,7 +111,7 @@ def analyze_review_ollama(review_text, model_name="llama3"):
         result["model_name"] = model_name
         return result
     except Exception as e:
-        print(f"❌ Error processing review (Ollama): {e}")
+        print(f"Error processing review (Ollama): {e}")
         return None
 results = []
 
