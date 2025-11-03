@@ -63,7 +63,7 @@ FROM google_review.restaurant_reviews r
 WHERE r.text IS NOT NULL
   AND r.review_id NOT IN (
       SELECT review_id FROM google_review.review_llm_results
-  );
+  )
 
 """, pg_engine)
 
