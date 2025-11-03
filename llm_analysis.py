@@ -4,23 +4,19 @@ from sqlalchemy import create_engine, text
 import hashlib
 import json
 from transformers import pipeline
-import pandas as pd
 import ollama
 import re
+import time
 
-# It sets up a PostgreSQL connection with the engine
+# PostgreSQL connection
 pg_engine = create_engine("postgresql+psycopg2://postgres:1234@localhost:5432/postgres")
 
 def upload_to_db(df, table_name, schema_name='google_review'):
-    """
-    Uploads a DataFrame to PostgreSQL using a temp table + MERGE (PostgreSQL 15+)
-    """
+    """Upload a DataFrame to PostgreSQL using MERGE (PostgreSQL 15+)"""
     temp_table = f"temp_{table_name}"
-
     with pg_engine.connect() as conn:
         trans = conn.begin()
         try:
-            # Upload to temporary table first
             df.to_sql(
                 name=temp_table,
                 con=conn,
@@ -28,8 +24,6 @@ def upload_to_db(df, table_name, schema_name='google_review'):
                 if_exists='replace',
                 index=False
             )
-
-            # Identify primary key columns
             pk_query = f"""
                 SELECT a.attname AS column_name
                 FROM pg_index i
@@ -41,43 +35,33 @@ def upload_to_db(df, table_name, schema_name='google_review'):
             """
             res = conn.execute(text(pk_query))
             primary_keys = [r[0] for r in res]
-
             if not primary_keys:
                 raise Exception(f"No primary key found for {schema_name}.{table_name}")
-
-            # Build MERGE statement
             update_keys_condition = " AND ".join([f"target.{pk} = source.{pk}" for pk in primary_keys])
             update_columns = ", ".join([f"{col} = source.{col}" for col in df.columns if col not in primary_keys])
-
             upsert_sql = f"""
                 MERGE INTO {schema_name}.{table_name} AS target
                 USING {schema_name}.{temp_table} AS source
                 ON {update_keys_condition}
-                WHEN MATCHED THEN
-                    UPDATE SET {update_columns}
-                WHEN NOT MATCHED THEN
-                    INSERT ({', '.join(df.columns)})
-                    VALUES ({', '.join([f'source.{c}' for c in df.columns])});
+                WHEN MATCHED THEN UPDATE SET {update_columns}
+                WHEN NOT MATCHED THEN INSERT ({', '.join(df.columns)})
+                VALUES ({', '.join([f'source.{c}' for c in df.columns])});
             """
-
-            # Execute MERGE
             conn.execute(text(upsert_sql))
             conn.execute(text(f"DROP TABLE {schema_name}.{temp_table}"))
             trans.commit()
-            print(f"Upsert completed successfully into {schema_name}.{table_name}")
+            print(f"✅ Batch upsert successful → {schema_name}.{table_name}")
         except Exception as e:
             trans.rollback()
-            print("Upsert failed:", e)
+            print("❌ Batch upsert failed:", e)
             raise
 
+# Load  reviews
 reviews_df = pd.read_sql("""
     SELECT review_id, text 
     FROM google_review.restaurant_reviews
     WHERE text IS NOT NULL
 """, pg_engine)
-
-
-
 
 def extract_json_block(text):
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -89,9 +73,7 @@ def extract_json_block(text):
     return {"raw_output": text.strip()}
 
 def analyze_review_ollama(review_text, model_name="llama3"):
-    """
-    Run inference locally via Ollama and return structured JSON.
-    """
+    """Run inference locally via Ollama and return structured JSON."""
     prompt = f"""
     Analyze this customer review.
     1. Determine sentiment (Positive, Neutral, or Negative)
@@ -103,7 +85,6 @@ def analyze_review_ollama(review_text, model_name="llama3"):
 
     Review: {review_text}
     """
-
     try:
         response = ollama.chat(model=model_name, messages=[{"role": "user", "content": prompt}])
         text_output = response["message"]["content"]
@@ -111,28 +92,39 @@ def analyze_review_ollama(review_text, model_name="llama3"):
         result["model_name"] = model_name
         return result
     except Exception as e:
-        print(f"Error processing review (Ollama): {e}")
+        print(f"❌ Error processing review (Ollama): {e}")
         return None
+
+# --- Batch processing logic ---
+BATCH_SIZE = 20
 results = []
 
-for _, row in reviews_df.iterrows():
+for idx, (_, row) in enumerate(reviews_df.iterrows(), start=1):
     review_text = str(row['text'])[:512]
     analysis = analyze_review_ollama(review_text, model_name="llama3")
 
-    if not analysis:
-        continue
+    if analysis:
+        results.append({
+            'review_id': row['review_id'],
+            'sentiment_label': analysis.get('sentiment_label'),
+            'sentiment_score': float(analysis.get('sentiment_score', 0.0)),
+            'summary': analysis.get('summary'),
+            'keywords': ', '.join(analysis.get('keywords', []))
+                        if isinstance(analysis.get('keywords'), list)
+                        else analysis.get('keywords'),
+            'model_name': analysis.get('model_name')
+        })
 
-    results.append({
-        'review_id': row['review_id'],
-        'sentiment_label': analysis.get('sentiment_label'),
-        'sentiment_score': float(analysis.get('sentiment_score', 0.0)),
-        'summary': analysis.get('summary'),
-        'keywords': ', '.join(analysis.get('keywords', []))
-                    if isinstance(analysis.get('keywords'), list)
-                    else analysis.get('keywords'),
-        'model_name': analysis.get('model_name')
-    })
+    # When 20 records are ready → upload and clear
+    if idx % BATCH_SIZE == 0:
+        batch_df = pd.DataFrame(results)
+        if not batch_df.empty:
+            upload_to_db(batch_df, 'review_llm_results')
+            results.clear()
+            print(f"🚀 Batch {idx // BATCH_SIZE} processed ({idx} reviews so far)")
+        time.sleep(3)  # avoid overloading Ollama
 
+# Process remaining records
 if results:
-    results_df = pd.DataFrame(results)
-    upload_to_db(results_df, 'review_llm_results')
+    upload_to_db(pd.DataFrame(results), 'review_llm_results')
+    print(f"✅ Final batch processed ({len(results)} records)")
