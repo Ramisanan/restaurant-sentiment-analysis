@@ -58,9 +58,13 @@ def upload_to_db(df, table_name, schema_name='google_review'):
 
 # Load  reviews
 reviews_df = pd.read_sql("""
-    SELECT review_id, text 
-    FROM google_review.restaurant_reviews
-    WHERE text IS NOT NULL
+    SELECT r.review_id, r.text
+FROM google_review.restaurant_reviews r
+WHERE r.text IS NOT NULL
+  AND r.review_id NOT IN (
+      SELECT review_id FROM google_review.review_llm_results
+  );
+
 """, pg_engine)
 
 def extract_json_block(text):
