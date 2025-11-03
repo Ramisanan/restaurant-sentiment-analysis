@@ -102,12 +102,16 @@ results = []
 for idx, (_, row) in enumerate(reviews_df.iterrows(), start=1):
     review_text = str(row['text'])[:512]
     analysis = analyze_review_ollama(review_text, model_name="llama3")
+    try:
+        sentiment_score = float(analysis.get('sentiment_score')) if analysis.get('sentiment_score') is not None else 0.0
+    except (ValueError, TypeError):
+        sentiment_score = 0.0
 
     if analysis:
         results.append({
             'review_id': row['review_id'],
             'sentiment_label': analysis.get('sentiment_label'),
-            'sentiment_score': float(analysis.get('sentiment_score', 0.0)),
+            'sentiment_score': sentiment_score,
             'summary': analysis.get('summary'),
             'keywords': ', '.join(analysis.get('keywords', []))
                         if isinstance(analysis.get('keywords'), list)
