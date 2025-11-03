@@ -8,7 +8,6 @@ import pandas as pd
 import os
 from keybert import KeyBERT
 kw_model = KeyBERT('all-MiniLM-L6-v2')
-# It sets up a PostgreSQL connection with the engine
 pg_engine = create_engine("postgresql+psycopg2://postgres:1234@localhost:5432/postgres")
 
 
@@ -75,7 +74,6 @@ def upload_to_db(df, table_name, schema_name='google_review'):
 new_token = os.getenv("APIFY_API_TOKEN")
 url = f"https://api.apify.com/v2/acts/compass~crawler-google-places/runs/last/dataset/items?token={new_token}"
 
-# --- FETCH DATA FROM API ---
 try:
     response = requests.get(url)
     if response.status_code == 200:
@@ -88,9 +86,7 @@ except requests.exceptions.RequestException as e:
     print(f"An error occurred: {e}")
     data = []
 
-# --- PROCESS DATA ---
 if data:
-    # Columns to keep from the API response
     columns_to_keep = [
         'title', 'description', 'categoryName', 'address',
         'street', 'city', 'postalCode', 'state', 'countryCode', 'phone',
@@ -98,24 +94,20 @@ if data:
         'reviewsDistribution', 'reviews'
     ]
 
-    # Step 1 — Create the base DataFrame
     df = pd.DataFrame(data)
     df = df[[col for col in columns_to_keep if col in df.columns]]
 
-    # Step 2 — Define hash ID generator
     def generate_hash_id(street, postal_code, title):
         """Generate deterministic unique hash from address and name"""
         base_string = f"{street or ''}_{postal_code or ''}_{title or ''}".lower().strip()
         return hashlib.sha256(base_string.encode()).hexdigest()[:16]  # 16-char hash
 
-    # Step 3 — Create restaurant_id column (hash-based)
     df.insert(
         0,
         'restaurant_id',
         df.apply(lambda x: generate_hash_id(x.get('street'), x.get('postalCode'), x.get('title')), axis=1)
     )
 
-    # Step 4 — Combine address fields into a single full_address column
     def combine_address(row):
         parts = [
             str(row.get('street') or ''),
@@ -124,7 +116,6 @@ if data:
             str(row.get('postalCode') or ''),
             str(row.get('countryCode') or '')
         ]
-        # Join non-empty parts with commas and strip trailing spaces
         return ', '.join([p.strip() for p in parts if p.strip()])
 
     df['full_address'] = df.apply(combine_address, axis=1)
@@ -135,9 +126,8 @@ if data:
     'reviewsDistribution': 'reviewsdistribution'
 }, inplace=True)
 
-    # Step 5 — Build the reviews table
     def expand_reviews(df):
-        records = []  # store flattened reviews
+        records = []  
 
         for _, row in df.iterrows():
             restaurant_id = row['restaurant_id']
@@ -218,51 +208,5 @@ if data:
 
     upload_to_db(restaurant_df, 'restaurant_details')
     upload_to_db(reviews_df, 'restaurant_reviews')
-
-
-
-
-# Load sentiment and summarization pipelines
-sentiment_analyzer = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment")
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-
-# --- Load review data ---
-reviews_df = pd.read_sql("""
-    SELECT review_id, text 
-    FROM google_review.restaurant_reviews
-    WHERE text IS NOT NULL
-""", pg_engine)
-
-
-# inside your NLP loop
-
-# --- Run NLP ---
-results = []
-for _, row in reviews_df.iterrows():
-    review_text = str(row['text'])[:512]  # limit long reviews for model safety
-    try:
-        sentiment = sentiment_analyzer(review_text)[0]
-        summary = summarizer(review_text, max_length=40, min_length=10, do_sample=False)[0]['summary_text']
-        keywords = kw_model.extract_keywords(review_text, keyphrase_ngram_range=(1, 2), stop_words='english', top_n=5)
-        keyword_list = [kw[0] for kw in keywords]
-
-        results.append({
-            'review_id': row['review_id'],
-            'sentiment_label': sentiment['label'],
-            'sentiment_score': float(sentiment['score']),
-            'summary': summary,
-            'keywords': ', '.join(keyword_list)
-        })
-    except Exception:
-        continue
-
-results_df = pd.DataFrame(results)
-print(results_df.head())
-upload_to_db(results_df, 'review_nlp_results')
-upload_to_db(results_df, 'review_llm_results')
-hf_token = os.getenv("HF_API_TOKEN")
-model = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-url = f"https://api-inference.huggingface.co/models/{model}"
-headers = {"Authorization": f"Bearer {hf_token}"}
 
 
