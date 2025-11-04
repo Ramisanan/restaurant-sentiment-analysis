@@ -1,4 +1,4 @@
-YouTube Video Link: https://youtu.be/Gv-QE32dT54
+YouTube Video Link: https://github.com/Ramisanan/restaurant-sentiment-analysis
 
 
 # Restaurant Sentiment Analysis  
