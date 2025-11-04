@@ -1,11 +1,11 @@
-# 🍽️ Restaurant Sentiment Analysis  
+# Restaurant Sentiment Analysis  
 
 This project analyzes Google restaurant reviews using **Transformer-based NLP models** and **Large Language Models (LLMs)**.  
 It extracts sentiment labels, scores, and keywords to understand customer opinions and identify improvement areas across 49 restaurants.  
 
 ---
 
-## 🚀 Features  
+## Features  
 - **PostgreSQL Integration:** Structured storage for restaurant and review data  
 - **Transformer Models:** Hugging Face pipelines for sentiment analysis & summarization  
 - **Keyword Extraction:** Using KeyBERT (`all-MiniLM-L6-v2`) for top phrases  
@@ -15,7 +15,7 @@ It extracts sentiment labels, scores, and keywords to understand customer opinio
 
 ---
 
-## 📊 Visualization Outputs  
+## Visualization Outputs  
 - Bar charts comparing NLP vs LLM sentiment alignment  
 - Scatter plots showing correlation between sentiment scores  
 - Word clouds and bar charts for positive & negative keyword frequencies  
@@ -23,7 +23,7 @@ It extracts sentiment labels, scores, and keywords to understand customer opinio
 
 ---
 
-## 🧠 Tools & Technologies  
+## Tools & Technologies  
 - **Python 3.10+**  
 - **PostgreSQL 15+**  
 - **Transformers (Hugging Face)**  
@@ -33,7 +33,7 @@ It extracts sentiment labels, scores, and keywords to understand customer opinio
 
 ---
 
-## 🧩 Project Workflow  
+## Project Workflow  
 1. **Data Extraction:**  
    Reviews fetched via the Apify Google Places API.  
 
@@ -61,7 +61,7 @@ It extracts sentiment labels, scores, and keywords to understand customer opinio
 
 ---
 
-## 💻 Run the Project  
+## Run the Project  
 Clone the repository and run the analysis scripts sequentially:  
 ```bash
 # Step 1: NLP model analysis
